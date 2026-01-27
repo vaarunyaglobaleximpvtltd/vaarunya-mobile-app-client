@@ -1,15 +1,16 @@
 {
   "expo": {
-    "name": "client",
-    "slug": "client",
+    "name": "Vaarunya",
+    "slug": "vaarunya",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "client",
+    "scheme": "vaarunya",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.saketh.vaarunya"
     },
     "android": {
       "adaptiveIcon": {
