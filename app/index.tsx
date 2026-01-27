@@ -19,6 +19,7 @@ const API_BASE = 'https://vaarunya-mobile-app-server.onrender.com/api'; // Updat
 
 interface PriceRecord {
     model_price: string;
+    unit_name_price?: string;
     [key: string]: any;
 }
 
@@ -106,7 +107,7 @@ export default function HomeScreen() {
                 <View style={styles.priceContainer}>
                     <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
                         <Text style={styles.priceText}>{avgPrice ? `₹${avgPrice}` : 'N/A'}</Text>
-                        <Text style={styles.secondaryTextSmall}>Avg Modal</Text>
+                        <Text style={styles.secondaryTextSmall}>{itemRecords.length > 0 ? itemRecords[0].unit_name_price : 'Avg Modal'}</Text>
                     </View>
                     <ChevronRight size={20} color="#a0a0a0" />
                 </View>

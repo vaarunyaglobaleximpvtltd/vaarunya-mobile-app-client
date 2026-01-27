@@ -21,7 +21,10 @@ export default function DetailsScreen() {
         <View style={styles.marketCard}>
             <View style={styles.marketHeader}>
                 <Text style={styles.marketName}>{item.market_name}</Text>
-                <Text style={styles.marketPrice}>₹{item.model_price}</Text>
+                <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.marketPrice}>₹{item.model_price}</Text>
+                    <Text style={styles.secondaryTextSmall}>{item.unit_name_price}</Text>
+                </View>
             </View>
             <View style={styles.marketFooter}>
                 <Text style={styles.secondaryText}>{item.district_name}, {item.state_name}</Text>
@@ -40,9 +43,14 @@ export default function DetailsScreen() {
 
                 <View style={styles.heroCard}>
                     <Text style={styles.heroLabel}>{commodity.cmdt_name}</Text>
-                    <Text style={styles.heroPrice}>
-                        {records.length > 0 ? `₹${records[0].model_price}` : 'No Data'}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+                        <Text style={styles.heroPrice}>
+                            {records.length > 0 ? `₹${records[0].model_price}` : 'No Data'}
+                        </Text>
+                        {records.length > 0 && (
+                            <Text style={styles.secondaryText}>{records[0].unit_name_price}</Text>
+                        )}
+                    </View>
                     <View style={styles.insightRow}>
                         <TrendingUp size={16} color="#2ecc71" />
                         <Text style={styles.insightText}>Market data from {records.length} locations</Text>
@@ -153,6 +161,10 @@ const styles = StyleSheet.create({
     secondaryText: {
         color: '#a0a0a0',
         fontSize: 12,
+    },
+    secondaryTextSmall: {
+        color: '#a0a0a0',
+        fontSize: 10,
     },
     listContent: {
         paddingBottom: 20,
