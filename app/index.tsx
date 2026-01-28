@@ -15,7 +15,7 @@ import dayjs from 'dayjs';
 import { Search, ChevronRight, Calendar } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
-const API_BASE = 'https://vaarunya-mobile-app-server.onrender.com/api'; // Updated to machine IP for device connectivity
+const API_BASE = 'https://vaarunya-mobile-app.vercel.app/api'; // Updated to machine IP for device connectivity
 
 interface PriceRecord {
     model_price: string;
@@ -53,6 +53,24 @@ export default function HomeScreen() {
     useEffect(() => {
         fetchInitialData();
     }, [selectedDate]);
+
+    const handleForceRefresh = async () => {
+        try {
+            setLoading(true);
+            // Trigger server-side fetch
+            console.log(`Triggering background fetch for ${selectedDate}...`);
+            await axios.post(`${API_BASE}/fetch/trigger`, { date: selectedDate });
+
+            // Wait a moment before reloading data
+            setTimeout(() => {
+                fetchInitialData();
+            }, 1000);
+        } catch (err) {
+            console.error("Failed to trigger background fetch:", err);
+            // Even if trigger fails, try to load existing data
+            fetchInitialData();
+        }
+    };
 
     const fetchInitialData = async () => {
         try {
@@ -121,8 +139,8 @@ export default function HomeScreen() {
                 <View style={styles.header}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                         <Text style={styles.title}>Vaarunya Prices</Text>
-                        <TouchableOpacity onPress={fetchInitialData} disabled={loading}>
-                            <Text style={{ color: '#2ecc71', fontWeight: '600' }}>{loading ? '...' : 'Refresh'}</Text>
+                        <TouchableOpacity onPress={handleForceRefresh} disabled={true}>
+                            <Text style={{ color: '#a0a0a0', fontWeight: '600' }}>Refresh</Text>
                         </TouchableOpacity>
                     </View>
                     <View style={styles.searchBar}>
@@ -170,8 +188,16 @@ export default function HomeScreen() {
                         <Text style={styles.secondaryText}>Only items with prices ({filteredCommodities.length})</Text>
                     </TouchableOpacity>
                     <View style={styles.datePicker}>
-                        <Calendar size={14} color="#a0a0a0" />
-                        <Text style={styles.dateText}>{selectedDate}</Text>
+                        <TouchableOpacity onPress={() => setSelectedDate(dayjs(selectedDate).subtract(1, 'day').format('YYYY-MM-DD'))}>
+                            <ChevronRight size={20} color="#a0a0a0" style={{ transform: [{ rotate: '180deg' }] }} />
+                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Calendar size={14} color="#a0a0a0" />
+                            <Text style={styles.dateText}>{selectedDate}</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => setSelectedDate(dayjs(selectedDate).add(1, 'day').format('YYYY-MM-DD'))}>
+                            <ChevronRight size={20} color="#a0a0a0" />
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -271,7 +297,13 @@ const styles = StyleSheet.create({
     datePicker: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
+        gap: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
     },
     dateText: {
         color: '#fff',
