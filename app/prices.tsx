@@ -145,10 +145,8 @@ export default function PricesScreen() {
         // Calculate Min/Max and Sources
         let totalModalPrice = 0;
         let modalPriceCount = 0;
-        let totalArrivals = 0;
-        let totalTraded = 0;
         const fees = new Set<string>();
-
+        let maxMarketTraded = 0;
         if (itemRecords.length > 0) {
             itemRecords.forEach((r: PriceRecord) => {
                 const price = parseFloat(String(r.model_price).replace(/,/g, ''));
@@ -156,27 +154,44 @@ export default function PricesScreen() {
                     totalModalPrice += price;
                     modalPriceCount++;
                 }
-                fees.add(r.source === 'eNAM' ? 'eNAM' : 'AGMARK');
+                const trd = parseFloat(String(r.commodity_traded)) || 0;
+                if (trd > maxMarketTraded) maxMarketTraded = trd;
 
-                // Calculate Trade Score Data
-                if (r.commodity_arrivals) {
-                    totalArrivals += parseFloat(String(r.commodity_arrivals)) || 0;
-                }
-                if (r.commodity_traded) {
-                    totalTraded += parseFloat(String(r.commodity_traded)) || 0;
-                }
+                fees.add(r.source === 'eNAM' ? 'eNAM' : 'AGMARK');
             });
         }
 
         const hasData = itemRecords.length > 0 && modalPriceCount > 0;
         const avgPrice = hasData ? Math.round(totalModalPrice / modalPriceCount) : 0;
+        const avgPriceGlobal = modalPriceCount > 0 ? totalModalPrice / modalPriceCount : 0;
         const priceDisplay = hasData ? `₹${avgPrice}` : 'N/A';
 
         const hasEnam = fees.has('eNAM');
         const hasAgmark = fees.has('AGMARK');
 
-        const rawLiquidity = totalArrivals > 0 ? (totalTraded / totalArrivals) : 0;
-        const tradeScore = Math.min(100, rawLiquidity * 100);
+        // Calculate Trading Score (Average of all markets using L, V, C components)
+        let totalScore = 0;
+        let scoreCount = 0;
+
+        itemRecords.forEach((r: PriceRecord) => {
+            const arr = parseFloat(String(r.commodity_arrivals)) || 0;
+            const trd = parseFloat(String(r.commodity_traded)) || 0;
+            const p = parseFloat(String(r.model_price).replace(/,/g, '')) || 0;
+
+            if (arr > 0) {
+                // Liquidity (60%)
+                const L = Math.min(1, trd / arr);
+                // Volume Significance (20%)
+                const V = maxMarketTraded > 0 ? trd / maxMarketTraded : 0;
+                // Price Stability (20%)
+                const C = avgPriceGlobal > 0 ? (1 - Math.min(1, Math.abs(p - avgPriceGlobal) / avgPriceGlobal)) : 1;
+
+                totalScore += (L * 0.6 + V * 0.2 + C * 0.2) * 100;
+                scoreCount++;
+            }
+        });
+
+        const tradeScore = scoreCount > 0 ? totalScore / scoreCount : 0;
 
         // Color logic for numerical score
         let strengthColor = '#64748b'; // Slate
