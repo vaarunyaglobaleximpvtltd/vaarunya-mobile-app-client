@@ -1,0 +1,10 @@
+Starting project at /Users/saketh/Documents/vaarunya mobile app/client
+React Compiler enabled
+Starting Metro Bundler
+The following packages should be updated for best compatibility with the installed expo version:
+  expo@54.0.32 - expected version: ~54.0.33
+  expo-router@6.0.22 - expected version: ~6.0.23
+  react-native-svg@15.15.1 - expected version: 15.12.1
+Your project may not work correctly until you install the expected versions of the packages.
+Waiting on http://localhost:8081
+Logs for your project will appear below.

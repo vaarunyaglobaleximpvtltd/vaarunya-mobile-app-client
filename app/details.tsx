@@ -14,7 +14,7 @@ import axios from 'axios';
 import PriceChart from '../components/PriceChart';
 import { SectionList } from 'react-native';
 
-const API_BASE = 'http://localhost:5050/api';
+const API_BASE = 'http://192.168.31.123:5050/api';
 
 export default function DetailsScreen() {
     const router = useRouter();

@@ -15,7 +15,7 @@ import dayjs from 'dayjs';
 import { Search, ChevronRight, ChevronLeft, Calendar } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
-const API_BASE = 'http://localhost:5050/api'; // Updated to machine IP for device connectivity
+const API_BASE = 'http://192.168.31.123:5050/api'; // Updated to machine IP for device connectivity
 
 interface PriceRecord {
     model_price: string;
