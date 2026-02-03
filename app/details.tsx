@@ -1,14 +1,20 @@
-import React from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     StyleSheet,
     View,
     Text,
     FlatList,
     TouchableOpacity,
-    SafeAreaView
+    TextInput
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { TrendingUp, ArrowLeft } from 'lucide-react-native';
+import { TrendingUp, ChevronLeft, ChevronUp, ChevronDown, Search } from 'lucide-react-native';
+import axios from 'axios';
+import PriceChart from '../components/PriceChart';
+import { SectionList } from 'react-native';
+
+const API_BASE = 'http://localhost:5050/api';
 
 export default function DetailsScreen() {
     const router = useRouter();
@@ -17,55 +23,369 @@ export default function DetailsScreen() {
     const commodity = params.commodity ? JSON.parse(params.commodity as string) : {};
     const records = params.records ? JSON.parse(params.records as string) : [];
 
-    const renderMarketItem = ({ item }: { item: any }) => (
-        <View style={styles.marketCard}>
-            <View style={styles.marketHeader}>
-                <Text style={styles.marketName}>{item.market_name}</Text>
-                <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.marketPrice}>₹{item.model_price}</Text>
-                    <Text style={styles.secondaryTextSmall}>{item.unit_name_price}</Text>
-                </View>
+    const [selectedSource, setSelectedSource] = useState('All');
+    const [priceHistory, setPriceHistory] = useState<any[]>([]);
+    const [duration, setDuration] = useState('1M');
+    const [marketSearch, setMarketSearch] = useState('');
+
+    const toTitleCase = (str: string) => {
+        return str.toLowerCase().replace(/(?:^|\s)\w/g, (match) => match.toUpperCase());
+    };
+
+    useEffect(() => {
+        if (commodity.cmdt_name) {
+            fetchHistory();
+        }
+    }, [commodity.cmdt_name, duration]);
+
+    const fetchHistory = async () => {
+        try {
+            const res = await axios.get(`${API_BASE}/history`, {
+                params: { commodity_name: commodity.cmdt_name, duration }
+            });
+            if (res.data && Array.isArray(res.data)) {
+                setPriceHistory(res.data);
+            }
+        } catch (err) {
+            console.log("Failed to fetch history", err);
+        }
+    };
+    const [selectedState, setSelectedState] = useState('All');
+    const [sortField, setSortField] = useState<'price' | 'market'>('price');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+    // Extract Unique States
+    const uniqueStates = useMemo(() => {
+        const states = new Set<string>();
+        records.forEach((r: any) => {
+            if (r.state_name) states.add(r.state_name);
+        });
+        return ['All', ...Array.from(states).sort()];
+    }, [records]);
+
+    const aggregateData = useMemo(() => {
+        if (records.length === 0) return { maxTraded: 0, avgPrice: 0 };
+        let maxTrd = 0;
+        let totalPrice = 0;
+        let count = 0;
+
+        records.forEach((r: any) => {
+            const trd = parseFloat(r.commodity_traded) || 0;
+            if (trd > maxTrd) maxTrd = trd;
+            const price = parseFloat(String(r.model_price).replace(/,/g, '')) || 0;
+            if (price > 0) {
+                totalPrice += price;
+                count++;
+            }
+        });
+
+        return {
+            maxTraded: maxTrd,
+            avgPrice: count > 0 ? totalPrice / count : 0
+        };
+    }, [records]);
+
+    const filteredAndSortedRecords = useMemo(() => {
+        let data = records.filter((r: any) => {
+            // Source Filter
+            if (selectedSource !== 'All') {
+                const src = r.source === 'eNAM' ? 'eNAM' : 'AGMARK';
+                if (src !== selectedSource) return false;
+            }
+            // State Filter
+            if (selectedState !== 'All') {
+                if ((r.state_name || '') !== selectedState) return false;
+            }
+            // Market Search
+            if (marketSearch) {
+                if (!(r.market_name || '').toLowerCase().includes(marketSearch.toLowerCase())) return false;
+            }
+            return true;
+        });
+
+        // Sorting
+        return data.sort((a: any, b: any) => {
+            let res = 0;
+            if (sortField === 'price') {
+                const priceA = parseFloat(String(a.model_price).replace(/,/g, '')) || 0;
+                const priceB = parseFloat(String(b.model_price).replace(/,/g, '')) || 0;
+                res = priceA - priceB;
+            } else {
+                const nameA = (a.market_name || '').toLowerCase();
+                const nameB = (b.market_name || '').toLowerCase();
+                res = nameA.localeCompare(nameB);
+            }
+            return sortDirection === 'asc' ? res : -res;
+        });
+    }, [records, selectedSource, selectedState, sortField, sortDirection, marketSearch]);
+
+    const handleSort = (field: 'price' | 'market') => {
+        if (sortField === field) {
+            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortDirection('asc');
+        }
+    };
+
+    const renderHeader = () => (
+        <View style={styles.tableHeader}>
+            <TouchableOpacity
+                style={[styles.headerCell, { flex: 1.6, justifyContent: 'flex-start' }]}
+                onPress={() => handleSort('market')}
+            >
+                <Text style={styles.headerText}>Market</Text>
+                {sortField === 'market' && (
+                    sortDirection === 'asc' ? <ChevronUp size={12} color="#2ecc71" /> : <ChevronDown size={12} color="#2ecc71" />
+                )}
+            </TouchableOpacity>
+
+            <View style={[styles.headerCell, { flex: 0.6, justifyContent: 'center' }]}>
+                <Text style={styles.headerText}>Score</Text>
             </View>
-            <View style={styles.marketFooter}>
-                <Text style={styles.secondaryText}>{item.district_name}, {item.state_name}</Text>
-                <Text style={styles.secondaryText}>{item.variety_name}</Text>
+
+            <View style={[styles.headerCell, { flex: 0.8, justifyContent: 'flex-end' }]}>
+                <Text style={styles.headerText}>Min</Text>
             </View>
+
+            <View style={[styles.headerCell, { flex: 0.8, justifyContent: 'flex-end' }]}>
+                <Text style={styles.headerText}>Max</Text>
+            </View>
+
+            <TouchableOpacity
+                style={[styles.headerCell, { flex: 0.9, justifyContent: 'flex-end' }]}
+                onPress={() => handleSort('price')}
+            >
+                <Text style={styles.headerText}>Model</Text>
+                {sortField === 'price' && (
+                    sortDirection === 'asc' ? <ChevronUp size={12} color="#2ecc71" /> : <ChevronDown size={12} color="#2ecc71" />
+                )}
+            </TouchableOpacity>
         </View>
     );
+
+    const renderMarketItem = ({ item, index }: { item: any; index: number }) => {
+        const isEnam = item.source === 'eNAM';
+        let tradeScore = 0;
+        const arr = parseFloat(item.commodity_arrivals) || 0;
+        const trd = parseFloat(item.commodity_traded) || 0;
+        const p = parseFloat(String(item.model_price).replace(/,/g, '')) || 0;
+
+        if (arr > 0) {
+            // Liquidity (60%): How much of the arrivals were traded. Capped at 1.0 (100%)
+            const L = Math.min(1, trd / arr);
+            // Volume Significance (20%): How large is this market compared to the biggest peer
+            const V = aggregateData.maxTraded > 0 ? trd / aggregateData.maxTraded : 0;
+            // Price Stability (20%): How close is the price to the global average today
+            const C = aggregateData.avgPrice > 0 ? (1 - Math.min(1, Math.abs(p - aggregateData.avgPrice) / aggregateData.avgPrice)) : 1;
+
+            tradeScore = (L * 0.6 + V * 0.2 + C * 0.2) * 100;
+        }
+
+        const minPrice = item.min_price && parseFloat(item.min_price) > 0 ? Math.round(parseFloat(item.min_price)) : '-';
+        const maxPrice = item.max_price && parseFloat(item.max_price) > 0 ? Math.round(parseFloat(item.max_price)) : '-';
+
+        let scoreColor = '#3498db'; // Default blue
+        let scoreBg = 'rgba(52, 152, 219, 0.1)';
+        if (tradeScore >= 80) {
+            scoreColor = '#2ecc71';
+            scoreBg = 'rgba(46, 204, 113, 0.1)';
+        } else if (tradeScore < 40) {
+            scoreColor = '#e74c3c';
+            scoreBg = 'rgba(231, 76, 60, 0.1)';
+        }
+
+        return (
+            <View style={[
+                styles.tableRow,
+                { backgroundColor: index % 2 === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.02)' }
+            ]}>
+                <View style={{ flex: 1.6, justifyContent: 'center' }}>
+                    <Text style={styles.cellTextBold} numberOfLines={1}>
+                        {toTitleCase(item.market_name)}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                        <View style={[styles.badge, {
+                            backgroundColor: isEnam ? 'rgba(230, 126, 34, 0.15)' : 'rgba(46, 204, 113, 0.15)',
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderRadius: 4
+                        }]}>
+                            <Text style={[styles.badgeText, {
+                                color: isEnam ? '#e67e22' : '#2ecc71',
+                                fontSize: 9,
+                                fontWeight: '700'
+                            }]}>
+                                {isEnam ? 'eNAM' : 'AGMARK'}
+                            </Text>
+                        </View>
+                        <Text style={styles.cellSubText} numberOfLines={1}>
+                            {toTitleCase(item.district_name || item.state_name)}
+                        </Text>
+                    </View>
+                </View>
+
+                <View style={{ flex: 0.6, alignItems: 'center', justifyContent: 'center' }}>
+                    {tradeScore > 0 ? (
+                        <View style={[styles.scorePill, { backgroundColor: scoreBg }]}>
+                            <Text style={[styles.scoreText, { color: scoreColor }]}>
+                                {tradeScore.toFixed(0)}%
+                            </Text>
+                        </View>
+                    ) : (
+                        <Text style={[styles.cellSubText, { color: '#444' }]}>-</Text>
+                    )}
+                </View>
+
+                <View style={{ flex: 0.8, alignItems: 'flex-end', justifyContent: 'center' }}>
+                    <Text style={styles.secondaryPriceText}>{minPrice}</Text>
+                </View>
+
+                <View style={{ flex: 0.8, alignItems: 'flex-end', justifyContent: 'center' }}>
+                    <Text style={styles.secondaryPriceText}>{maxPrice}</Text>
+                </View>
+
+                <View style={{ flex: 0.9, alignItems: 'flex-end', justifyContent: 'center' }}>
+                    <Text style={styles.priceCellText}>₹{item.model_price}</Text>
+                </View>
+            </View>
+        );
+    };
 
     return (
         <SafeAreaView style={styles.safeArea}>
             <View style={styles.container}>
-                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                    <ArrowLeft size={24} color="#fff" />
-                    <Text style={styles.backText}>Back</Text>
-                </TouchableOpacity>
-
-                <View style={styles.heroCard}>
-                    <Text style={styles.heroLabel}>{commodity.cmdt_name}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-                        <Text style={styles.heroPrice}>
-                            {records.length > 0 ? `₹${records[0].model_price}` : 'No Data'}
-                        </Text>
-                        {records.length > 0 && (
-                            <Text style={styles.secondaryText}>{records[0].unit_name_price}</Text>
-                        )}
-                    </View>
-                    <View style={styles.insightRow}>
-                        <TrendingUp size={16} color="#2ecc71" />
-                        <Text style={styles.insightText}>Market data from {records.length} locations</Text>
-                    </View>
-                </View>
-
-                <Text style={styles.sectionTitle}>Market-wise Breakdown</Text>
-
-                <FlatList
-                    data={records}
+                <SectionList
+                    sections={[{
+                        title: 'Breakdown',
+                        data: filteredAndSortedRecords
+                    }]}
                     renderItem={renderMarketItem}
+                    renderSectionHeader={() => (
+                        <View style={{ backgroundColor: '#0a0a0c' }}>
+                            <Text style={styles.sectionTitle}>
+                                Market-wise Breakdown ({filteredAndSortedRecords.length})
+                            </Text>
+                            {renderHeader()}
+                        </View>
+                    )}
+                    stickySectionHeadersEnabled={true}
                     keyExtractor={(item, index) => index.toString()}
                     contentContainerStyle={styles.listContent}
+                    ListHeaderComponent={
+                        <View>
+                            <TouchableOpacity
+                                style={styles.backButton}
+                                onPress={() => router.back()}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            >
+                                <ChevronLeft size={28} color="#2ecc71" />
+                                <Text style={styles.backText}>Back</Text>
+                            </TouchableOpacity>
+
+                            <View style={styles.heroCard}>
+                                <Text style={styles.heroLabel}>{commodity.cmdt_name}</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+                                    <Text style={styles.heroPrice}>
+                                        {records.length > 0
+                                            ? `₹${Math.round(records.reduce((acc: number, curr: any) => acc + (parseFloat(String(curr.model_price).replace(/,/g, '')) || 0), 0) / records.length)}`
+                                            : 'No Data'}
+                                    </Text>
+                                    {records.length > 0 && (
+                                        <Text style={styles.secondaryText}>{records[0].unit_name_price}</Text>
+                                    )}
+                                </View>
+                                <View style={styles.insightRow}>
+                                    <TrendingUp size={16} color="#2ecc71" />
+                                    <Text style={styles.insightText}>Market data from {records.length} locations</Text>
+                                </View>
+                            </View>
+
+                            <View style={styles.chartSection}>
+                                <View style={styles.timeSelector}>
+                                    {['1W', '1M', '3M', '6M', 'ALL'].map((d) => (
+                                        <TouchableOpacity
+                                            key={d}
+                                            style={[styles.timeButton, duration === d && styles.activeTimeButton]}
+                                            onPress={() => setDuration(d)}
+                                        >
+                                            <Text style={[styles.timeText, duration === d && styles.activeTimeText]}>{d}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+
+                                {priceHistory.length > 1 ? (
+                                    <View>
+                                        <PriceChart data={priceHistory} color={priceHistory[priceHistory.length - 1].price >= priceHistory[0].price ? '#2ecc71' : '#e74c3c'} />
+                                        <View style={styles.statsRow}>
+                                            <View style={styles.statItem}>
+                                                <Text style={styles.statLabel}>High</Text>
+                                                <Text style={styles.statValue}>₹{Math.max(...priceHistory.map(p => p.price))}</Text>
+                                            </View>
+                                            <View style={styles.statItem}>
+                                                <Text style={styles.statLabel}>Low</Text>
+                                                <Text style={styles.statValue}>₹{Math.min(...priceHistory.map(p => p.price))}</Text>
+                                            </View>
+                                            <View style={styles.statItem}>
+                                                <Text style={styles.statLabel}>Average</Text>
+                                                <Text style={styles.statValue}>₹{Math.round(priceHistory.reduce((a, b) => a + b.price, 0) / priceHistory.length)}</Text>
+                                            </View>
+                                        </View>
+                                    </View>
+                                ) : (
+                                    <View style={styles.loadingChart}>
+                                        <Text style={styles.secondaryText}>Loading history...</Text>
+                                    </View>
+                                )}
+                            </View>
+
+                            <View style={styles.controlsContainer}>
+                                <View style={styles.tabContainer}>
+                                    {['All', 'AGMARK', 'eNAM'].map((tab) => (
+                                        <TouchableOpacity
+                                            key={tab}
+                                            style={[styles.tab, selectedSource === tab && styles.activeTab]}
+                                            onPress={() => setSelectedSource(tab)}
+                                        >
+                                            <Text style={[styles.tabText, selectedSource === tab && styles.activeTabText]}>{tab}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+
+                                <FlatList
+                                    horizontal
+                                    data={uniqueStates}
+                                    showsHorizontalScrollIndicator={false}
+                                    contentContainerStyle={styles.stateListContent}
+                                    style={{ marginTop: 12, maxHeight: 40 }}
+                                    renderItem={({ item }) => (
+                                        <TouchableOpacity
+                                            style={[styles.stateChip, selectedState === item && styles.activeStateChip]}
+                                            onPress={() => setSelectedState(item)}
+                                        >
+                                            <Text style={[styles.stateChipText, selectedState === item && styles.activeStateChipText]}>
+                                                {item}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )}
+                                    keyExtractor={item => item}
+                                />
+
+                                <View style={[styles.searchBar, { marginTop: 16 }]}>
+                                    <Search size={18} color="#a0a0a0" />
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Search markets..."
+                                        placeholderTextColor="#666"
+                                        value={marketSearch}
+                                        onChangeText={setMarketSearch}
+                                    />
+                                </View>
+                            </View>
+                        </View>
+                    }
                     ListEmptyComponent={
-                        <Text style={styles.emptyText}>No detailed market records available for this date.</Text>
+                        <Text style={styles.emptyText}>No records found.</Text>
                     }
                 />
             </View>
@@ -99,7 +419,7 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(46, 204, 113, 0.2)',
         borderRadius: 24,
         padding: 24,
-        marginBottom: 24,
+        marginBottom: 16,
     },
     heroLabel: {
         color: '#a0a0a0',
@@ -124,39 +444,11 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     sectionTitle: {
-        color: '#a0a0a0',
-        fontSize: 14,
-        fontWeight: '600',
-        marginBottom: 16,
-        textTransform: 'uppercase',
-    },
-    marketCard: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 12,
-    },
-    marketHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 8,
-    },
-    marketName: {
         color: '#fff',
         fontSize: 16,
-        fontWeight: '600',
-        flex: 1,
-    },
-    marketPrice: {
-        color: '#2ecc71',
-        fontSize: 16,
         fontWeight: '700',
-    },
-    marketFooter: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
+        marginBottom: 16,
+        marginTop: 24,
     },
     secondaryText: {
         color: '#a0a0a0',
@@ -173,5 +465,205 @@ const styles = StyleSheet.create({
         color: '#a0a0a0',
         textAlign: 'center',
         marginTop: 40,
-    }
+    },
+    controlsContainer: {
+        marginBottom: 12,
+    },
+    tabContainer: {
+        flexDirection: 'row',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 12,
+        padding: 4,
+        marginTop: 8,
+    },
+    tab: {
+        flex: 1,
+        paddingVertical: 8,
+        alignItems: 'center',
+        borderRadius: 8,
+    },
+    activeTab: {
+        backgroundColor: '#2ecc71',
+    },
+    tabText: {
+        color: '#a0a0a0',
+        fontWeight: '600',
+        fontSize: 14,
+    },
+    activeTabText: {
+        color: '#0a0a0c',
+    },
+    badge: {
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    badgeText: {
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    input: {
+        flex: 1,
+        color: '#fff',
+        marginLeft: 8,
+        fontSize: 14,
+    },
+    gridContainer: {
+        flex: 1,
+        backgroundColor: 'rgba(255, 255, 255, 0.02)',
+        borderRadius: 12,
+        overflow: 'hidden',
+    },
+    tableHeader: {
+        flexDirection: 'row',
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderBottomWidth: 1,
+        borderBottomColor: '#222',
+        backgroundColor: '#111',
+    },
+    headerCell: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    headerText: {
+        color: '#888',
+        fontSize: 11,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    tableRow: {
+        flexDirection: 'row',
+        paddingHorizontal: 16,
+        paddingVertical: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+        alignItems: 'center',
+    },
+    cellTextBold: {
+        color: '#fff',
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    cellSubText: {
+        color: '#888',
+        fontSize: 11,
+    },
+    secondaryPriceText: {
+        color: '#777',
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    priceCellText: {
+        color: '#2ecc71',
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    scorePill: {
+        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    scoreText: {
+        color: '#3498db',
+        fontSize: 11,
+        fontWeight: '700',
+    },
+    stateListContent: {
+        paddingRight: 16,
+    },
+    stateChip: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        marginRight: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    activeStateChip: {
+        backgroundColor: '#2ecc71',
+        borderColor: '#2ecc71',
+    },
+    stateChipText: {
+        color: '#a0a0a0',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    activeStateChipText: {
+        color: '#0a0a0c',
+    },
+    chartSection: {
+        marginBottom: 20,
+        backgroundColor: '#111',
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#222'
+    },
+    timeSelector: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+        backgroundColor: '#1a1a1a',
+        borderRadius: 8,
+        padding: 4
+    },
+    timeButton: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 6,
+    },
+    activeTimeButton: {
+        backgroundColor: '#333',
+    },
+    timeText: {
+        color: '#666',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    activeTimeText: {
+        color: '#fff',
+    },
+    statsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 16,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#222',
+    },
+    statItem: {
+        alignItems: 'center',
+    },
+    statLabel: {
+        color: '#666',
+        fontSize: 11,
+        marginBottom: 4,
+        textTransform: 'uppercase',
+    },
+    statValue: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '700',
+        fontVariant: ['tabular-nums'],
+    },
+    loadingChart: {
+        height: 200,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
 });

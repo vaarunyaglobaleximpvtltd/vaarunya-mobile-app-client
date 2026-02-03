@@ -12,14 +12,18 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import dayjs from 'dayjs';
-import { Search, ChevronRight, Calendar } from 'lucide-react-native';
+import { Search, ChevronRight, ChevronLeft, Calendar } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
-const API_BASE = 'https://vaarunya-mobile-app.vercel.app/api'; // Updated to machine IP for device connectivity
+const API_BASE = 'http://localhost:5050/api'; // Updated to machine IP for device connectivity
 
 interface PriceRecord {
     model_price: string;
     unit_name_price?: string;
+    source?: string;
+    market_name?: string;
+    commodity_arrivals?: string | number;
+    commodity_traded?: string | number;
     [key: string]: any;
 }
 
@@ -109,25 +113,97 @@ export default function HomeScreen() {
 
     const renderCommodity = ({ item }: { item: Commodity }) => {
         const itemRecords = prices[item.cmdt_id] || [];
-        const avgPrice = itemRecords.length > 0
-            ? (itemRecords.reduce((acc: number, curr: PriceRecord) => acc + parseFloat(curr.model_price.replace(/,/g, '')), 0) / itemRecords.length).toFixed(2)
-            : null;
+
+        // Calculate Min/Max and Sources
+        let totalModalPrice = 0;
+        let modalPriceCount = 0;
+        let totalArrivals = 0;
+        let totalTraded = 0;
+        const fees = new Set<string>();
+
+        if (itemRecords.length > 0) {
+            itemRecords.forEach(r => {
+                const price = parseFloat(String(r.model_price).replace(/,/g, ''));
+                if (!isNaN(price)) {
+                    totalModalPrice += price;
+                    modalPriceCount++;
+                }
+                fees.add(r.source === 'eNAM' ? 'eNAM' : 'AGMARK');
+
+                // Calculate Trade Score Data
+                if (r.commodity_arrivals) {
+                    totalArrivals += parseFloat(String(r.commodity_arrivals)) || 0;
+                }
+                if (r.commodity_traded) {
+                    totalTraded += parseFloat(String(r.commodity_traded)) || 0;
+                }
+            });
+        }
+
+        const hasData = itemRecords.length > 0 && modalPriceCount > 0;
+        const avgPrice = hasData ? Math.round(totalModalPrice / modalPriceCount) : 0;
+        const priceDisplay = hasData ? `₹${avgPrice}` : 'N/A';
+
+        const hasEnam = fees.has('eNAM');
+        const hasAgmark = fees.has('AGMARK');
+
+        const rawLiquidity = totalArrivals > 0 ? (totalTraded / totalArrivals) : 0;
+        const tradeScore = Math.min(100, rawLiquidity * 100);
+
+        // Color logic for numerical score
+        let strengthColor = '#64748b'; // Slate
+        if (tradeScore >= 80) {
+            strengthColor = '#10b981'; // Emerald
+        } else if (tradeScore >= 40) {
+            strengthColor = '#3b82f6'; // Blue
+        } else if (tradeScore >= 20) {
+            strengthColor = '#f59e0b'; // Amber
+        }
 
         return (
             <TouchableOpacity
                 style={styles.card}
                 onPress={() => router.push({ pathname: '/details', params: { commodity: JSON.stringify(item), records: JSON.stringify(itemRecords) } })}
             >
-                <View>
+                <View style={{ flex: 1 }}>
                     <Text style={styles.commodityName}>{item.cmdt_name}</Text>
-                    <Text style={styles.secondaryText}>{itemRecords.length} markets reported</Text>
-                </View>
-                <View style={styles.priceContainer}>
-                    <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
-                        <Text style={styles.priceText}>{avgPrice ? `₹${avgPrice}` : 'N/A'}</Text>
-                        <Text style={styles.secondaryTextSmall}>{itemRecords.length > 0 ? itemRecords[0].unit_name_price : 'Avg Modal'}</Text>
+                    <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
+                        {hasAgmark && (
+                            <View style={[styles.badge, { backgroundColor: 'rgba(46, 204, 113, 0.1)' }]}>
+                                <Text style={[styles.badgeText, { color: '#2ecc71' }]}>AGMARK</Text>
+                            </View>
+                        )}
+                        {hasEnam && (
+                            <View style={[styles.badge, { backgroundColor: 'rgba(230, 126, 34, 0.1)' }]}>
+                                <Text style={[styles.badgeText, { color: '#e67e22' }]}>eNAM</Text>
+                            </View>
+                        )}
+                        {!hasData && (
+                            <Text style={styles.secondaryText}>No Data</Text>
+                        )}
                     </View>
-                    <ChevronRight size={20} color="#a0a0a0" />
+                </View>
+
+                <View style={styles.priceContainer}>
+                    <View style={{ alignItems: 'flex-end', marginRight: 12 }}>
+                        <Text style={styles.priceText}>{priceDisplay}</Text>
+
+                        {hasData && tradeScore > 0 && (
+                            <View style={styles.strengthRow}>
+                                <View style={styles.meterContainer}>
+                                    <View style={[styles.meterFill, { width: `${tradeScore}%`, backgroundColor: strengthColor }]} />
+                                </View>
+                                <Text style={[styles.strengthText, { color: strengthColor }]}>
+                                    {tradeScore.toFixed(0)}%
+                                </Text>
+                            </View>
+                        )}
+
+                        <Text style={styles.secondaryTextSmall}>
+                            {itemRecords.length} Markets
+                        </Text>
+                    </View>
+                    <ChevronRight size={18} color="#444" />
                 </View>
             </TouchableOpacity>
         );
@@ -139,9 +215,7 @@ export default function HomeScreen() {
                 <View style={styles.header}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                         <Text style={styles.title}>Vaarunya Prices</Text>
-                        <TouchableOpacity onPress={handleForceRefresh} disabled={true}>
-                            <Text style={{ color: '#a0a0a0', fontWeight: '600' }}>Refresh</Text>
-                        </TouchableOpacity>
+
                     </View>
                     <View style={styles.searchBar}>
                         <Search size={20} color="#a0a0a0" />
@@ -188,8 +262,11 @@ export default function HomeScreen() {
                         <Text style={styles.secondaryText}>Only items with prices ({filteredCommodities.length})</Text>
                     </TouchableOpacity>
                     <View style={styles.datePicker}>
-                        <TouchableOpacity onPress={() => setSelectedDate(dayjs(selectedDate).subtract(1, 'day').format('YYYY-MM-DD'))}>
-                            <ChevronRight size={20} color="#a0a0a0" style={{ transform: [{ rotate: '180deg' }] }} />
+                        <TouchableOpacity
+                            onPress={() => setSelectedDate(dayjs(selectedDate).subtract(1, 'day').format('YYYY-MM-DD'))}
+                            style={{ padding: 4 }} // Add padding for touch target
+                        >
+                            <ChevronLeft size={20} color="#a0a0a0" />
                         </TouchableOpacity>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                             <Calendar size={14} color="#a0a0a0" />
@@ -291,8 +368,31 @@ const styles = StyleSheet.create({
         fontSize: 12,
     },
     secondaryTextSmall: {
-        color: '#a0a0a0',
+        color: '#666',
         fontSize: 10,
+        fontWeight: '500',
+    },
+    strengthRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginVertical: 2,
+    },
+    meterContainer: {
+        width: 40,
+        height: 4,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 2,
+        overflow: 'hidden',
+    },
+    meterFill: {
+        height: '100%',
+        borderRadius: 2,
+    },
+    strengthText: {
+        fontSize: 10,
+        fontWeight: '800',
+        fontVariant: ['tabular-nums'],
     },
     datePicker: {
         flexDirection: 'row',
@@ -377,5 +477,14 @@ const styles = StyleSheet.create({
     checkboxActive: {
         backgroundColor: '#2ecc71',
         borderColor: '#2ecc71',
+    },
+    badge: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
+    },
+    badgeText: {
+        fontSize: 10,
+        fontWeight: '700',
     },
 });
