@@ -14,7 +14,7 @@ import axios from 'axios';
 import PriceChart from '../components/PriceChart';
 import { SectionList } from 'react-native';
 
-const API_BASE = 'http://192.168.31.123:5050/api';
+const API_BASE = 'http://localhost:5050/api';
 
 export default function DetailsScreen() {
     const router = useRouter();
@@ -51,6 +51,7 @@ export default function DetailsScreen() {
         }
     };
     const [selectedState, setSelectedState] = useState('All');
+    const [selectedDistrict, setSelectedDistrict] = useState('All');
     const [sortField, setSortField] = useState<'price' | 'market'>('price');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
@@ -62,6 +63,18 @@ export default function DetailsScreen() {
         });
         return ['All', ...Array.from(states).sort()];
     }, [records]);
+
+    // Extract Unique Districts based on selected state
+    const uniqueDistricts = useMemo(() => {
+        if (selectedState === 'All') return ['All'];
+        const districts = new Set<string>();
+        records.forEach((r: any) => {
+            if (r.state_name === selectedState && r.district_name) {
+                districts.add(r.district_name);
+            }
+        });
+        return ['All', ...Array.from(districts).sort()];
+    }, [records, selectedState]);
 
     const aggregateData = useMemo(() => {
         if (records.length === 0) return { maxTraded: 0, avgPrice: 0 };
@@ -96,6 +109,10 @@ export default function DetailsScreen() {
             if (selectedState !== 'All') {
                 if ((r.state_name || '') !== selectedState) return false;
             }
+            // District Filter
+            if (selectedDistrict !== 'All') {
+                if ((r.district_name || '') !== selectedDistrict) return false;
+            }
             // Market Search
             if (marketSearch) {
                 if (!(r.market_name || '').toLowerCase().includes(marketSearch.toLowerCase())) return false;
@@ -117,7 +134,7 @@ export default function DetailsScreen() {
             }
             return sortDirection === 'asc' ? res : -res;
         });
-    }, [records, selectedSource, selectedState, sortField, sortDirection, marketSearch]);
+    }, [records, selectedSource, selectedState, selectedDistrict, sortField, sortDirection, marketSearch]);
 
     const handleSort = (field: 'price' | 'market') => {
         if (sortField === field) {
@@ -361,7 +378,10 @@ export default function DetailsScreen() {
                                     renderItem={({ item }) => (
                                         <TouchableOpacity
                                             style={[styles.stateChip, selectedState === item && styles.activeStateChip]}
-                                            onPress={() => setSelectedState(item)}
+                                            onPress={() => {
+                                                setSelectedState(item);
+                                                setSelectedDistrict('All');
+                                            }}
                                         >
                                             <Text style={[styles.stateChipText, selectedState === item && styles.activeStateChipText]}>
                                                 {item}
@@ -370,6 +390,32 @@ export default function DetailsScreen() {
                                     )}
                                     keyExtractor={item => item}
                                 />
+
+                                {selectedState !== 'All' && uniqueDistricts.length > 1 && (
+                                    <View style={{ marginTop: 12 }}>
+                                        <Text style={[styles.secondaryTextSmall, { marginLeft: 4, marginBottom: 8, color: '#666' }]}>
+                                            SELECT DISTRICT
+                                        </Text>
+                                        <FlatList
+                                            horizontal
+                                            data={uniqueDistricts}
+                                            showsHorizontalScrollIndicator={false}
+                                            contentContainerStyle={styles.stateListContent}
+                                            style={{ maxHeight: 40 }}
+                                            renderItem={({ item }) => (
+                                                <TouchableOpacity
+                                                    style={[styles.districtChip, selectedDistrict === item && styles.activeDistrictChip]}
+                                                    onPress={() => setSelectedDistrict(item)}
+                                                >
+                                                    <Text style={[styles.districtChipText, selectedDistrict === item && styles.activeDistrictChipText]}>
+                                                        {item}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            )}
+                                            keyExtractor={item => item}
+                                        />
+                                    </View>
+                                )}
 
                                 <View style={[styles.searchBar, { marginTop: 16 }]}>
                                     <Search size={18} color="#a0a0a0" />
@@ -605,6 +651,27 @@ const styles = StyleSheet.create({
     },
     activeStateChipText: {
         color: '#0a0a0c',
+    },
+    districtChip: {
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 12,
+        backgroundColor: 'rgba(52, 152, 219, 0.05)',
+        marginRight: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(52, 152, 219, 0.1)',
+    },
+    activeDistrictChip: {
+        backgroundColor: '#3498db',
+        borderColor: '#3498db',
+    },
+    districtChipText: {
+        color: '#a0a0a0',
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    activeDistrictChipText: {
+        color: '#fff',
     },
     chartSection: {
         marginBottom: 20,
