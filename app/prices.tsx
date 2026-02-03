@@ -8,12 +8,15 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     Platform,
-    SafeAreaView
+    SafeAreaView,
+    Modal,
+    ScrollView
 } from 'react-native';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { Search, ChevronRight, ChevronLeft, Calendar } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { Calendar as RNCalendar } from 'react-native-calendars';
 
 const API_BASE = 'https://vaarunya-mobile-app.vercel.app/api';
 
@@ -56,6 +59,18 @@ export default function PricesScreen() {
     const [error, setError] = useState<string | null>(null);
     const [showOnlyWithPrices, setShowOnlyWithPrices] = useState(false);
 
+    // Date Range States
+    const [fromDate, setFromDate] = useState(dayjs().subtract(7, 'day').format('YYYY-MM-DD'));
+    const [toDate, setToDate] = useState(dayjs().format('YYYY-MM-DD'));
+    const [showCalendar, setShowCalendar] = useState(false);
+    const [selectingType, setSelectingType] = useState<'from' | 'to'>('from');
+    const [currentMonth, setCurrentMonth] = useState(dayjs().format('YYYY-MM-DD'));
+    const [showMonthSelect, setShowMonthSelect] = useState(false);
+    const [showYearSelect, setShowYearSelect] = useState(false);
+
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const years = Array.from({ length: 10 }, (_, i) => dayjs().year() - 5 + i);
+
     useEffect(() => {
         fetchMetadata();
     }, []);
@@ -63,7 +78,7 @@ export default function PricesScreen() {
     useEffect(() => {
         // Reset and fetch when filters change
         fetchInitialData();
-    }, [selectedDate, searchQuery, selectedGroup, showOnlyWithPrices]);
+    }, [fromDate, toDate, searchQuery, selectedGroup, showOnlyWithPrices]);
 
     const fetchMetadata = async () => {
         try {
@@ -82,7 +97,8 @@ export default function PricesScreen() {
             setError(null);
             const res = await axios.get(`${API_BASE}/prices`, {
                 params: {
-                    date: selectedDate,
+                    fromDate,
+                    toDate,
                     search: searchQuery,
                     groupId: selectedGroup,
                     onlyWithPrices: showOnlyWithPrices,
@@ -109,7 +125,8 @@ export default function PricesScreen() {
             const nextPage = pagination.page + 1;
             const res = await axios.get(`${API_BASE}/prices`, {
                 params: {
-                    date: selectedDate,
+                    fromDate,
+                    toDate,
                     search: searchQuery,
                     groupId: selectedGroup,
                     onlyWithPrices: showOnlyWithPrices,
@@ -130,7 +147,7 @@ export default function PricesScreen() {
     const handleForceRefresh = async () => {
         try {
             setLoading(true);
-            await axios.post(`${API_BASE}/fetch/trigger`, { date: selectedDate });
+            await axios.post(`${API_BASE}/fetch/trigger`, { date: toDate });
             setTimeout(() => {
                 fetchInitialData();
             }, 1000);
@@ -305,24 +322,127 @@ export default function PricesScreen() {
                 <View style={styles.infoRow}>
                     <TouchableOpacity onPress={() => setShowOnlyWithPrices(!showOnlyWithPrices)} style={styles.toggleRow}>
                         <View style={[styles.checkbox, showOnlyWithPrices && styles.checkboxActive]} />
-                        <Text style={styles.secondaryText}>Only items with prices ({pagination.total})</Text>
+                        <Text style={styles.secondaryText}>Only with prices ({pagination.total})</Text>
                     </TouchableOpacity>
-                    <View style={styles.datePicker}>
+
+                    <View style={styles.rangeContainer}>
                         <TouchableOpacity
-                            onPress={() => setSelectedDate(dayjs(selectedDate).subtract(1, 'day').format('YYYY-MM-DD'))}
-                            style={{ padding: 4 }}
+                            style={styles.dateSelector}
+                            onPress={() => { setSelectingType('from'); setShowCalendar(true); }}
                         >
-                            <ChevronLeft size={20} color="#a0a0a0" />
+                            <Calendar size={12} color="#2ecc71" />
+                            <Text style={styles.dateLabel}>{dayjs(fromDate).format('DD MMM')}</Text>
                         </TouchableOpacity>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <Calendar size={14} color="#a0a0a0" />
-                            <Text style={styles.dateText}>{selectedDate}</Text>
-                        </View>
-                        <TouchableOpacity onPress={() => setSelectedDate(dayjs(selectedDate).add(1, 'day').format('YYYY-MM-DD'))}>
-                            <ChevronRight size={20} color="#a0a0a0" />
+                        <Text style={{ color: '#444', marginHorizontal: 4 }}>-</Text>
+                        <TouchableOpacity
+                            style={styles.dateSelector}
+                            onPress={() => { setSelectingType('to'); setShowCalendar(true); }}
+                        >
+                            <Text style={styles.dateLabel}>{dayjs(toDate).format('DD MMM')}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
+
+                {/* Date Picker Modal */}
+                <Modal visible={showCalendar} transparent animationType="fade">
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.calendarCard}>
+                            <View style={styles.calendarHeader}>
+                                <Text style={styles.calendarTitle}>
+                                    Select {selectingType === 'from' ? 'From' : 'To'} Date
+                                </Text>
+                                <TouchableOpacity onPress={() => setShowCalendar(false)}>
+                                    <Text style={{ color: '#2ecc71', fontWeight: '700' }}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            <RNCalendar
+                                current={currentMonth}
+                                key={currentMonth}
+                                onDayPress={(day) => {
+                                    if (selectingType === 'from') {
+                                        setFromDate(day.dateString);
+                                        if (dayjs(day.dateString).isAfter(dayjs(toDate))) {
+                                            setToDate(day.dateString);
+                                        }
+                                    } else {
+                                        setToDate(day.dateString);
+                                        if (dayjs(day.dateString).isBefore(dayjs(fromDate))) {
+                                            setFromDate(day.dateString);
+                                        }
+                                    }
+                                }}
+                                onMonthChange={(month) => setCurrentMonth(month.dateString)}
+                                renderHeader={(date) => (
+                                    <View style={styles.customHeader}>
+                                        <TouchableOpacity onPress={() => setShowMonthSelect(!showMonthSelect)} style={styles.headerBtn}>
+                                            <Text style={styles.headerBtnText}>{dayjs(date).format('MMMM')}</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={() => setShowYearSelect(!showYearSelect)} style={styles.headerBtn}>
+                                            <Text style={styles.headerBtnText}>{dayjs(date).format('YYYY')}</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+                                markedDates={{
+                                    [fromDate]: { selected: true, startingDay: true, color: '#2ecc71' },
+                                    [toDate]: { selected: true, endingDay: true, color: '#27ae60' }
+                                }}
+                                theme={{
+                                    backgroundColor: '#1a1a1a',
+                                    calendarBackground: '#1a1a1a',
+                                    textSectionTitleColor: '#666',
+                                    selectedDayBackgroundColor: '#2ecc71',
+                                    selectedDayTextColor: '#000',
+                                    todayTextColor: '#2ecc71',
+                                    dayTextColor: '#fff',
+                                    textDisabledColor: '#333',
+                                    monthTextColor: '#fff',
+                                    arrowColor: '#2ecc71',
+                                }}
+                            />
+
+                            {showMonthSelect && (
+                                <View style={styles.pickerOverlay}>
+                                    <View style={styles.gridContainer}>
+                                        {months.map((m, idx) => (
+                                            <TouchableOpacity
+                                                key={m}
+                                                style={styles.gridItem}
+                                                onPress={() => {
+                                                    const newDate = dayjs(currentMonth).month(idx).format('YYYY-MM-DD');
+                                                    setCurrentMonth(newDate);
+                                                    setShowMonthSelect(false);
+                                                }}
+                                            >
+                                                <Text style={styles.gridItemText}>{m}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                </View>
+                            )}
+
+                            {showYearSelect && (
+                                <View style={styles.pickerOverlay}>
+                                    <View style={styles.gridContainer}>
+                                        {years.map(y => (
+                                            <TouchableOpacity
+                                                key={y}
+                                                style={styles.gridItem}
+                                                onPress={() => {
+                                                    const newDate = dayjs(currentMonth).year(y).format('YYYY-MM-DD');
+                                                    setCurrentMonth(newDate);
+                                                    setShowYearSelect(false);
+                                                }}
+                                            >
+                                                <Text style={styles.gridItemText}>{y}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                    </View>
+                </Modal>
 
                 {loading ? (
                     <ActivityIndicator size="large" color="#2ecc71" style={{ marginTop: 20 }} />
@@ -414,6 +534,112 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 16,
+        paddingHorizontal: 4,
+    },
+    toggleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    rangeContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 8,
+        padding: 2,
+    },
+    dateSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingVertical: 6,
+        paddingHorizontal: 8,
+        borderRadius: 6,
+    },
+    dateLabel: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'center',
+        padding: 20,
+    },
+    calendarCard: {
+        backgroundColor: '#1a1a1a',
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#333',
+    },
+    calendarHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+        paddingHorizontal: 8,
+    },
+    calendarTitle: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    customHeader: {
+        flexDirection: 'row',
+        gap: 12,
+        alignItems: 'center',
+    },
+    headerBtn: {
+        backgroundColor: 'rgba(46, 204, 113, 0.1)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6,
+    },
+    headerBtnText: {
+        color: '#2ecc71',
+        fontWeight: '700',
+        fontSize: 14,
+    },
+    pickerOverlay: {
+        position: 'absolute',
+        top: 60,
+        left: 16,
+        right: 16,
+        bottom: 16,
+        backgroundColor: '#1a1a1a',
+        borderRadius: 12,
+        zIndex: 100,
+        padding: 10,
+    },
+    gridContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        gap: 10,
+    },
+    gridItem: {
+        width: '30%',
+        paddingVertical: 12,
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 8,
+    },
+    gridItemText: {
+        color: '#fff',
+        fontWeight: '600',
+    },
+    checkbox: {
+        width: 18,
+        height: 18,
+        borderRadius: 4,
+        borderWidth: 2,
+        borderColor: '#444',
+    },
+    checkboxActive: {
+        backgroundColor: '#2ecc71',
+        borderColor: '#2ecc71',
     },
     secondaryText: {
         color: '#a0a0a0',
@@ -445,21 +671,6 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontWeight: '800',
         fontVariant: ['tabular-nums'],
-    },
-    datePicker: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-    },
-    dateText: {
-        color: '#fff',
-        fontSize: 12,
     },
     card: {
         flexDirection: 'row',
@@ -513,22 +724,6 @@ const styles = StyleSheet.create({
     retryText: {
         color: '#fff',
         fontWeight: '600',
-    },
-    toggleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    checkbox: {
-        width: 16,
-        height: 16,
-        borderRadius: 4,
-        borderWidth: 1,
-        borderColor: '#a0a0a0',
-    },
-    checkboxActive: {
-        backgroundColor: '#2ecc71',
-        borderColor: '#2ecc71',
     },
     badge: {
         paddingHorizontal: 8,

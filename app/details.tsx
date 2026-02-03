@@ -202,7 +202,7 @@ export default function DetailsScreen() {
                 style={[styles.headerCell, { flex: 0.9, justifyContent: 'flex-end' }]}
                 onPress={() => handleSort('price')}
             >
-                <Text style={styles.headerText}>Model</Text>
+                <Text style={styles.headerText}>Avg</Text>
                 {sortField === 'price' && (
                     sortDirection === 'asc' ? <ChevronUp size={12} color="#2ecc71" /> : <ChevronDown size={12} color="#2ecc71" />
                 )}
