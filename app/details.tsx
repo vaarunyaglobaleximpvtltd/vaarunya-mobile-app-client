@@ -14,7 +14,7 @@ import axios from 'axios';
 import PriceChart from '../components/PriceChart';
 import { SectionList } from 'react-native';
 
-const API_BASE = 'http://localhost:5050/api';
+const API_BASE = 'https://vaarunya-mobile-app.vercel.app/api';
 
 export default function DetailsScreen() {
     const router = useRouter();
@@ -51,30 +51,50 @@ export default function DetailsScreen() {
         }
     };
     const [selectedState, setSelectedState] = useState('All');
-    const [selectedDistrict, setSelectedDistrict] = useState('All');
+    const [selectedSubFilter, setSelectedSubFilter] = useState('All');
     const [sortField, setSortField] = useState<'price' | 'market'>('price');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-    // Extract Unique States
+    // Extract Unique States (Normalized to Title Case)
     const uniqueStates = useMemo(() => {
         const states = new Set<string>();
         records.forEach((r: any) => {
-            if (r.state_name) states.add(r.state_name);
+            if (r.state_name) {
+                states.add(toTitleCase(r.state_name));
+            }
         });
         return ['All', ...Array.from(states).sort()];
     }, [records]);
 
-    // Extract Unique Districts based on selected state
-    const uniqueDistricts = useMemo(() => {
+    // Extract Sub-Filters based on source (District for AGMARK, APMC for eNAM)
+    const uniqueSubFilters = useMemo(() => {
         if (selectedState === 'All') return ['All'];
-        const districts = new Set<string>();
+        const items = new Set<string>();
         records.forEach((r: any) => {
-            if (r.state_name === selectedState && r.district_name) {
-                districts.add(r.district_name);
+            // Case-insensitive state comparison
+            if (toTitleCase(r.state_name || '') === selectedState) {
+                if (selectedSource === 'eNAM') {
+                    // eNAM uses market_name as the primary regional filter (APMC)
+                    if (r.market_name) items.add(toTitleCase(r.market_name));
+                } else if (selectedSource === 'AGMARK') {
+                    // AGMARK uses district_name, fallback to market_name if missing
+                    const location = r.district_name || r.market_name;
+                    if (location) items.add(toTitleCase(location));
+                } else {
+                    // All Sources - Combine Districts and APMCs
+                    const location = r.source === 'eNAM' ? r.market_name : (r.district_name || r.market_name);
+                    if (location) items.add(toTitleCase(location));
+                }
             }
         });
-        return ['All', ...Array.from(districts).sort()];
-    }, [records, selectedState]);
+        return ['All', ...Array.from(items).sort()];
+    }, [records, selectedState, selectedSource]);
+
+    const subFilterLabel = useMemo(() => {
+        if (selectedSource === 'eNAM') return 'SELECT APMC';
+        if (selectedSource === 'AGMARK') return 'SELECT DISTRICT';
+        return 'SELECT DISTRICT / APMC';
+    }, [selectedSource]);
 
     const aggregateData = useMemo(() => {
         if (records.length === 0) return { maxTraded: 0, avgPrice: 0 };
@@ -105,13 +125,22 @@ export default function DetailsScreen() {
                 const src = r.source === 'eNAM' ? 'eNAM' : 'AGMARK';
                 if (src !== selectedSource) return false;
             }
-            // State Filter
+            // State Filter (Case Insensitive)
             if (selectedState !== 'All') {
-                if ((r.state_name || '') !== selectedState) return false;
+                if (toTitleCase(r.state_name || '') !== selectedState) return false;
             }
-            // District Filter
-            if (selectedDistrict !== 'All') {
-                if ((r.district_name || '') !== selectedDistrict) return false;
+            // Sub-Filter (District/APMC)
+            if (selectedSubFilter !== 'All') {
+                if (selectedSource === 'eNAM') {
+                    if (toTitleCase(r.market_name || '') !== selectedSubFilter) return false;
+                } else if (selectedSource === 'AGMARK') {
+                    const location = r.district_name || r.market_name;
+                    if (toTitleCase(location || '') !== selectedSubFilter) return false;
+                } else {
+                    // All Sources logic
+                    const location = r.source === 'eNAM' ? r.market_name : (r.district_name || r.market_name);
+                    if (toTitleCase(location || '') !== selectedSubFilter) return false;
+                }
             }
             // Market Search
             if (marketSearch) {
@@ -134,7 +163,7 @@ export default function DetailsScreen() {
             }
             return sortDirection === 'asc' ? res : -res;
         });
-    }, [records, selectedSource, selectedState, selectedDistrict, sortField, sortDirection, marketSearch]);
+    }, [records, selectedSource, selectedState, selectedSubFilter, sortField, sortDirection, marketSearch]);
 
     const handleSort = (field: 'price' | 'market') => {
         if (sortField === field) {
@@ -380,7 +409,7 @@ export default function DetailsScreen() {
                                             style={[styles.stateChip, selectedState === item && styles.activeStateChip]}
                                             onPress={() => {
                                                 setSelectedState(item);
-                                                setSelectedDistrict('All');
+                                                setSelectedSubFilter('All');
                                             }}
                                         >
                                             <Text style={[styles.stateChipText, selectedState === item && styles.activeStateChipText]}>
@@ -391,23 +420,23 @@ export default function DetailsScreen() {
                                     keyExtractor={item => item}
                                 />
 
-                                {selectedState !== 'All' && uniqueDistricts.length > 1 && (
+                                {selectedState !== 'All' && uniqueSubFilters.length > 1 && (
                                     <View style={{ marginTop: 12 }}>
                                         <Text style={[styles.secondaryTextSmall, { marginLeft: 4, marginBottom: 8, color: '#666' }]}>
-                                            SELECT DISTRICT
+                                            {subFilterLabel}
                                         </Text>
                                         <FlatList
                                             horizontal
-                                            data={uniqueDistricts}
+                                            data={uniqueSubFilters}
                                             showsHorizontalScrollIndicator={false}
                                             contentContainerStyle={styles.stateListContent}
                                             style={{ maxHeight: 40 }}
                                             renderItem={({ item }) => (
                                                 <TouchableOpacity
-                                                    style={[styles.districtChip, selectedDistrict === item && styles.activeDistrictChip]}
-                                                    onPress={() => setSelectedDistrict(item)}
+                                                    style={[styles.districtChip, selectedSubFilter === item && styles.activeDistrictChip]}
+                                                    onPress={() => setSelectedSubFilter(item)}
                                                 >
-                                                    <Text style={[styles.districtChipText, selectedDistrict === item && styles.activeDistrictChipText]}>
+                                                    <Text style={[styles.districtChipText, selectedSubFilter === item && styles.activeDistrictChipText]}>
                                                         {item}
                                                     </Text>
                                                 </TouchableOpacity>
