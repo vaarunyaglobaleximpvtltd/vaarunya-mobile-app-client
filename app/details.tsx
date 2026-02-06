@@ -230,15 +230,22 @@ export default function DetailsScreen() {
         const trd = parseFloat(item.commodity_traded) || 0;
         const p = parseFloat(String(item.model_price).replace(/,/g, '')) || 0;
 
-        if (isEnam && arr > 0) {
-            // Liquidity (60%): How much of the arrivals were traded. Capped at 1.0 (100%)
-            const L = Math.min(1, trd / arr);
+        if (isEnam && (arr > 0 || trd > 0)) {
+            // Liquidity (60%): How much of the arrivals were traded.
+            // If arrivals report 0 but something was traded, we assume 100% liquidity
+            const L = arr > 0 ? Math.min(1, trd / arr) : (trd > 0 ? 1 : 0);
+
             // Volume Significance (20%): How large is this market compared to the biggest peer
             const V = aggregateData.maxTraded > 0 ? trd / aggregateData.maxTraded : 0;
+
             // Price Stability (20%): How close is the price to the global average today
             const C = aggregateData.avgPrice > 0 ? (1 - Math.min(1, Math.abs(p - aggregateData.avgPrice) / aggregateData.avgPrice)) : 1;
 
             tradeScore = (L * 0.6 + V * 0.2 + C * 0.2) * 100;
+
+            console.log(`[DEBUG] Score for ${item.market_name}: ${tradeScore.toFixed(2)}% | Formula: (L:${L.toFixed(2)}*0.6 + V:${V.toFixed(2)}*0.2 + C:${C.toFixed(2)}*0.2) | Values: Arr:${arr}, Trd:${trd}, Price:${p}, GlobalAvg:${aggregateData.avgPrice.toFixed(0)}, MaxTrd:${aggregateData.maxTraded}`);
+        } else if (isEnam) {
+            console.log(`[DEBUG] Missing Score for ${item.market_name} | Reason: Both Arrivals and Traded are 0. Raw Arrivals: ${item.commodity_arrivals}, Raw Traded: ${item.commodity_traded}`);
         }
 
         const minPrice = item.min_price && parseFloat(item.min_price) > 0 ? Math.round(parseFloat(item.min_price)) : '-';

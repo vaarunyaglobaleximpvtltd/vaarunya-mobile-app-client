@@ -207,8 +207,8 @@ export default function PricesScreen() {
             const trd = parseFloat(String(r.commodity_traded)) || 0;
             const p = parseFloat(String(r.model_price).replace(/,/g, '')) || 0;
 
-            if (arr > 0) {
-                const L = Math.min(1, trd / arr);
+            if (arr > 0 || trd > 0) {
+                const L = arr > 0 ? Math.min(1, trd / arr) : (trd > 0 ? 1 : 0);
                 const V = maxMarketTraded > 0 ? trd / maxMarketTraded : 0;
                 const C = globalAvg > 0 ? (1 - Math.min(1, Math.abs(p - globalAvg) / globalAvg)) : 1;
                 totalScore += (L * 0.6 + V * 0.2 + C * 0.2) * 100;
