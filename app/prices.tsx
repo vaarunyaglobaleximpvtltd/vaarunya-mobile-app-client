@@ -10,11 +10,12 @@ import {
     Platform,
     SafeAreaView,
     Modal,
-    ScrollView
+    ScrollView,
+    Linking
 } from 'react-native';
 import axios from 'axios';
 import dayjs from 'dayjs';
-import { Search, ChevronRight, ChevronLeft, Calendar } from 'lucide-react-native';
+import { Search, ChevronRight, ChevronLeft, Calendar, Download } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 
@@ -59,11 +60,8 @@ export default function PricesScreen() {
     const [error, setError] = useState<string | null>(null);
     const [showOnlyWithPrices, setShowOnlyWithPrices] = useState(false);
 
-    // Date Range States
-    const [fromDate, setFromDate] = useState(dayjs().subtract(7, 'day').format('YYYY-MM-DD'));
-    const [toDate, setToDate] = useState(dayjs().format('YYYY-MM-DD'));
+    // Date Selection States
     const [showCalendar, setShowCalendar] = useState(false);
-    const [selectingType, setSelectingType] = useState<'from' | 'to'>('from');
     const [currentMonth, setCurrentMonth] = useState(dayjs().format('YYYY-MM-DD'));
     const [showMonthSelect, setShowMonthSelect] = useState(false);
     const [showYearSelect, setShowYearSelect] = useState(false);
@@ -78,7 +76,7 @@ export default function PricesScreen() {
     useEffect(() => {
         // Reset and fetch when filters change
         fetchInitialData();
-    }, [fromDate, toDate, searchQuery, selectedGroup, showOnlyWithPrices]);
+    }, [selectedDate, searchQuery, selectedGroup, showOnlyWithPrices]);
 
     const fetchMetadata = async () => {
         try {
@@ -97,8 +95,7 @@ export default function PricesScreen() {
             setError(null);
             const res = await axios.get(`${API_BASE}/prices`, {
                 params: {
-                    fromDate,
-                    toDate,
+                    date: selectedDate,
                     search: searchQuery,
                     groupId: selectedGroup,
                     onlyWithPrices: showOnlyWithPrices,
@@ -125,8 +122,7 @@ export default function PricesScreen() {
             const nextPage = pagination.page + 1;
             const res = await axios.get(`${API_BASE}/prices`, {
                 params: {
-                    fromDate,
-                    toDate,
+                    date: selectedDate,
                     search: searchQuery,
                     groupId: selectedGroup,
                     onlyWithPrices: showOnlyWithPrices,
@@ -144,10 +140,18 @@ export default function PricesScreen() {
         }
     };
 
+    const handleDownloadCSV = () => {
+        const downloadUrl = `${API_BASE}/prices/download?date=${selectedDate}`;
+        Linking.openURL(downloadUrl).catch(err => {
+            console.error("Failed to open download URL:", err);
+            setError("Failed to start download. Please try again.");
+        });
+    };
+
     const handleForceRefresh = async () => {
         try {
             setLoading(true);
-            await axios.post(`${API_BASE}/fetch/trigger`, { date: toDate });
+            await axios.post(`${API_BASE}/fetch/trigger`, { date: selectedDate });
             setTimeout(() => {
                 fetchInitialData();
             }, 1000);
@@ -159,50 +163,54 @@ export default function PricesScreen() {
     const renderCommodity = ({ item }: { item: any }) => {
         const itemRecords = item.records || [];
 
-        // Calculate Min/Max and Sources
-        let totalModalPrice = 0;
-        let modalPriceCount = 0;
+        // Group records by unit
+        const unitsMap: { [unit: string]: { total: number, count: number, trd: number } } = {};
         const fees = new Set<string>();
         let maxMarketTraded = 0;
-        if (itemRecords.length > 0) {
-            itemRecords.forEach((r: PriceRecord) => {
-                const price = parseFloat(String(r.model_price).replace(/,/g, ''));
-                if (!isNaN(price)) {
-                    totalModalPrice += price;
-                    modalPriceCount++;
-                }
-                const trd = parseFloat(String(r.commodity_traded)) || 0;
-                if (trd > maxMarketTraded) maxMarketTraded = trd;
 
-                fees.add(r.source === 'eNAM' ? 'eNAM' : 'AGMARK');
-            });
-        }
+        itemRecords.forEach((r: PriceRecord) => {
+            const unit = r.unit_name_price || 'Unit';
+            const price = parseFloat(String(r.model_price).replace(/,/g, ''));
+            const trd = parseFloat(String(r.commodity_traded)) || 0;
 
-        const hasData = itemRecords.length > 0 && modalPriceCount > 0;
-        const avgPrice = hasData ? Math.round(totalModalPrice / modalPriceCount) : 0;
-        const avgPriceGlobal = modalPriceCount > 0 ? totalModalPrice / modalPriceCount : 0;
-        const priceDisplay = hasData ? `₹${avgPrice}` : 'N/A';
+            if (!unitsMap[unit]) {
+                unitsMap[unit] = { total: 0, count: 0, trd: 0 };
+            }
+
+            if (!isNaN(price)) {
+                unitsMap[unit].total += price;
+                unitsMap[unit].count++;
+            }
+            if (trd > unitsMap[unit].trd) unitsMap[unit].trd = trd;
+            if (trd > maxMarketTraded) maxMarketTraded = trd;
+
+            fees.add(r.source === 'eNAM' ? 'eNAM' : 'AGMARK');
+        });
+
+        const unitEntries = Object.entries(unitsMap);
+        const hasData = itemRecords.length > 0 && unitEntries.some(([_, data]) => data.count > 0);
 
         const hasEnam = fees.has('eNAM');
         const hasAgmark = fees.has('AGMARK');
 
-        // Calculate Trading Score (Average of all markets using L, V, C components)
+        // Calculate Trading Score (using global average as baseline for stability)
+        const globalAvg = hasData ? (Object.values(unitsMap).reduce((acc, curr) => acc + curr.total, 0) / Object.values(unitsMap).reduce((acc, curr) => acc + curr.count, 0)) : 0;
+
         let totalScore = 0;
         let scoreCount = 0;
 
         itemRecords.forEach((r: PriceRecord) => {
+            // Only calculate trade score for eNAM records
+            if (r.source !== 'eNAM') return;
+
             const arr = parseFloat(String(r.commodity_arrivals)) || 0;
             const trd = parseFloat(String(r.commodity_traded)) || 0;
             const p = parseFloat(String(r.model_price).replace(/,/g, '')) || 0;
 
             if (arr > 0) {
-                // Liquidity (60%)
                 const L = Math.min(1, trd / arr);
-                // Volume Significance (20%)
                 const V = maxMarketTraded > 0 ? trd / maxMarketTraded : 0;
-                // Price Stability (20%)
-                const C = avgPriceGlobal > 0 ? (1 - Math.min(1, Math.abs(p - avgPriceGlobal) / avgPriceGlobal)) : 1;
-
+                const C = globalAvg > 0 ? (1 - Math.min(1, Math.abs(p - globalAvg) / globalAvg)) : 1;
                 totalScore += (L * 0.6 + V * 0.2 + C * 0.2) * 100;
                 scoreCount++;
             }
@@ -210,20 +218,18 @@ export default function PricesScreen() {
 
         const tradeScore = scoreCount > 0 ? totalScore / scoreCount : 0;
 
-        // Color logic for numerical score
-        let strengthColor = '#64748b'; // Slate
-        if (tradeScore >= 80) {
-            strengthColor = '#10b981'; // Emerald
-        } else if (tradeScore >= 40) {
-            strengthColor = '#3b82f6'; // Blue
-        } else if (tradeScore >= 20) {
-            strengthColor = '#f59e0b'; // Amber
-        }
+        let strengthColor = '#64748b';
+        if (tradeScore >= 80) strengthColor = '#10b981';
+        else if (tradeScore >= 40) strengthColor = '#3b82f6';
+        else if (tradeScore >= 20) strengthColor = '#f59e0b';
 
         return (
             <TouchableOpacity
                 style={styles.card}
-                onPress={() => router.push({ pathname: '/details', params: { commodity: JSON.stringify(item), records: JSON.stringify(itemRecords) } })}
+                onPress={() => {
+                    console.log(`[DEBUG] Commodity: ${item.cmdt_name}`);
+                    router.push({ pathname: '/details', params: { commodity: JSON.stringify(item), records: JSON.stringify(itemRecords) } });
+                }}
             >
                 <View style={{ flex: 1 }}>
                     <Text style={styles.commodityName}>{item.cmdt_name}</Text>
@@ -246,10 +252,27 @@ export default function PricesScreen() {
 
                 <View style={styles.priceContainer}>
                     <View style={{ alignItems: 'flex-end', marginRight: 12 }}>
-                        <Text style={styles.priceText}>{priceDisplay}</Text>
+                        {hasData ? (
+                            unitEntries.map(([unit, data], idx) => {
+                                if (data.count === 0) return null;
+                                const avg = data.total / data.count;
+                                const vPrice = Math.round(avg * 1.15);
+                                return (
+                                    <View key={unit} style={{ alignItems: 'flex-end', marginTop: idx > 0 ? 8 : 0 }}>
+                                        <Text style={styles.secondaryTextSmall}>Vaarunya Price ({unit})</Text>
+                                        <Text style={styles.priceText}>₹{vPrice}</Text>
+                                    </View>
+                                );
+                            })
+                        ) : (
+                            <View style={{ alignItems: 'flex-end' }}>
+                                <Text style={styles.secondaryTextSmall}>Vaarunya Price</Text>
+                                <Text style={styles.priceText}>N/A</Text>
+                            </View>
+                        )}
 
                         {hasData && tradeScore > 0 && (
-                            <View style={styles.strengthRow}>
+                            <View style={[styles.strengthRow, { marginTop: 6 }]}>
                                 <View style={styles.meterContainer}>
                                     <View style={[styles.meterFill, { width: `${tradeScore}%`, backgroundColor: strengthColor }]} />
                                 </View>
@@ -327,18 +350,20 @@ export default function PricesScreen() {
 
                     <View style={styles.rangeContainer}>
                         <TouchableOpacity
-                            style={styles.dateSelector}
-                            onPress={() => { setSelectingType('from'); setShowCalendar(true); }}
+                            style={styles.downloadBtn}
+                            onPress={handleDownloadCSV}
                         >
-                            <Calendar size={12} color="#2ecc71" />
-                            <Text style={styles.dateLabel}>{dayjs(fromDate).format('DD MMM')}</Text>
+                            <Download size={14} color="#2ecc71" />
                         </TouchableOpacity>
-                        <Text style={{ color: '#444', marginHorizontal: 4 }}>-</Text>
+
+                        <View style={styles.separator} />
+
                         <TouchableOpacity
                             style={styles.dateSelector}
-                            onPress={() => { setSelectingType('to'); setShowCalendar(true); }}
+                            onPress={() => setShowCalendar(true)}
                         >
-                            <Text style={styles.dateLabel}>{dayjs(toDate).format('DD MMM')}</Text>
+                            <Calendar size={12} color="#2ecc71" />
+                            <Text style={styles.dateLabel}>{dayjs(selectedDate).format('DD MMM YYYY')}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -349,7 +374,7 @@ export default function PricesScreen() {
                         <View style={styles.calendarCard}>
                             <View style={styles.calendarHeader}>
                                 <Text style={styles.calendarTitle}>
-                                    Select {selectingType === 'from' ? 'From' : 'To'} Date
+                                    Select Date
                                 </Text>
                                 <TouchableOpacity onPress={() => setShowCalendar(false)}>
                                     <Text style={{ color: '#2ecc71', fontWeight: '700' }}>Done</Text>
@@ -359,18 +384,10 @@ export default function PricesScreen() {
                             <RNCalendar
                                 current={currentMonth}
                                 key={currentMonth}
+                                maxDate={dayjs().format('YYYY-MM-DD')}
                                 onDayPress={(day) => {
-                                    if (selectingType === 'from') {
-                                        setFromDate(day.dateString);
-                                        if (dayjs(day.dateString).isAfter(dayjs(toDate))) {
-                                            setToDate(day.dateString);
-                                        }
-                                    } else {
-                                        setToDate(day.dateString);
-                                        if (dayjs(day.dateString).isBefore(dayjs(fromDate))) {
-                                            setFromDate(day.dateString);
-                                        }
-                                    }
+                                    setSelectedDate(day.dateString);
+                                    setShowCalendar(false);
                                 }}
                                 onMonthChange={(month) => setCurrentMonth(month.dateString)}
                                 renderHeader={(date) => (
@@ -384,8 +401,7 @@ export default function PricesScreen() {
                                     </View>
                                 )}
                                 markedDates={{
-                                    [fromDate]: { selected: true, startingDay: true, color: '#2ecc71' },
-                                    [toDate]: { selected: true, endingDay: true, color: '#27ae60' }
+                                    [selectedDate]: { selected: true, color: '#2ecc71' }
                                 }}
                                 theme={{
                                     backgroundColor: '#1a1a1a',
@@ -560,6 +576,19 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 12,
         fontWeight: '600',
+    },
+    downloadBtn: {
+        paddingVertical: 6,
+        paddingHorizontal: 8,
+        borderRadius: 6,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    separator: {
+        width: 1,
+        height: 16,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        marginHorizontal: 2,
     },
     modalOverlay: {
         flex: 1,

@@ -23,6 +23,14 @@ export default function DetailsScreen() {
     const commodity = params.commodity ? JSON.parse(params.commodity as string) : {};
     const records = params.records ? JSON.parse(params.records as string) : [];
 
+    useEffect(() => {
+        if (records.length > 0) {
+            const units = Array.from(new Set(records.map((r: any) => r.unit_name_price || 'Unit')));
+            console.log(`[DEBUG] Details Screen Loaded for: ${commodity.cmdt_name}`);
+            console.log(`[DEBUG] Available Unit Name Prices:`, units);
+        }
+    }, [commodity.cmdt_name, records.length]);
+
     const [selectedSource, setSelectedSource] = useState('All');
     const [priceHistory, setPriceHistory] = useState<any[]>([]);
     const [duration, setDuration] = useState('1M');
@@ -44,7 +52,12 @@ export default function DetailsScreen() {
                 params: { commodity_name: commodity.cmdt_name, duration }
             });
             if (res.data && Array.isArray(res.data)) {
-                setPriceHistory(res.data);
+                // Apply 15% bump to historical prices for Vaarunya Trend
+                const bumpedData = res.data.map((h: any) => ({
+                    ...h,
+                    price: Math.round(h.price * 1.15)
+                }));
+                setPriceHistory(bumpedData);
             }
         } catch (err) {
             console.log("Failed to fetch history", err);
@@ -217,7 +230,7 @@ export default function DetailsScreen() {
         const trd = parseFloat(item.commodity_traded) || 0;
         const p = parseFloat(String(item.model_price).replace(/,/g, '')) || 0;
 
-        if (arr > 0) {
+        if (isEnam && arr > 0) {
             // Liquidity (60%): How much of the arrivals were traded. Capped at 1.0 (100%)
             const L = Math.min(1, trd / arr);
             // Volume Significance (20%): How large is this market compared to the biggest peer
@@ -293,6 +306,7 @@ export default function DetailsScreen() {
 
                 <View style={{ flex: 0.9, alignItems: 'flex-end', justifyContent: 'center' }}>
                     <Text style={styles.priceCellText}>₹{item.model_price}</Text>
+                    <Text style={[styles.cellSubText, { fontSize: 8, color: '#666' }]}>{item.unit_name_price}</Text>
                 </View>
             </View>
         );
@@ -330,17 +344,33 @@ export default function DetailsScreen() {
                             </TouchableOpacity>
 
                             <View style={styles.heroCard}>
-                                <Text style={styles.heroLabel}>{commodity.cmdt_name}</Text>
-                                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-                                    <Text style={styles.heroPrice}>
-                                        {records.length > 0
-                                            ? `₹${Math.round(records.reduce((acc: number, curr: any) => acc + (parseFloat(String(curr.model_price).replace(/,/g, '')) || 0), 0) / records.length)}`
-                                            : 'No Data'}
-                                    </Text>
-                                    {records.length > 0 && (
-                                        <Text style={styles.secondaryText}>{records[0].unit_name_price}</Text>
-                                    )}
-                                </View>
+                                <Text style={styles.heroLabel}>Vaarunya Market Price • {commodity.cmdt_name}</Text>
+                                {(() => {
+                                    const unitsMap: { [unit: string]: { total: number, count: number } } = {};
+                                    records.forEach((r: any) => {
+                                        const unit = r.unit_name_price || 'Unit';
+                                        const price = parseFloat(String(r.model_price).replace(/,/g, ''));
+                                        if (!unitsMap[unit]) unitsMap[unit] = { total: 0, count: 0 };
+                                        if (!isNaN(price)) {
+                                            unitsMap[unit].total += price;
+                                            unitsMap[unit].count++;
+                                        }
+                                    });
+                                    const unitEntries = Object.entries(unitsMap).filter(([_, data]) => data.count > 0);
+
+                                    if (unitEntries.length === 0) {
+                                        return <Text style={styles.heroPrice}>No Data</Text>;
+                                    }
+
+                                    return unitEntries.map(([unit, data], idx) => (
+                                        <View key={unit} style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: idx > 0 ? 8 : 4 }}>
+                                            <Text style={styles.heroPrice}>
+                                                ₹{Math.round((data.total / data.count) * 1.15)}
+                                            </Text>
+                                            <Text style={styles.secondaryText}>{unit}</Text>
+                                        </View>
+                                    ));
+                                })()}
                                 <View style={styles.insightRow}>
                                     <TrendingUp size={16} color="#2ecc71" />
                                     <Text style={styles.insightText}>Market data from {records.length} locations</Text>
@@ -365,15 +395,15 @@ export default function DetailsScreen() {
                                         <PriceChart data={priceHistory} color={priceHistory[priceHistory.length - 1].price >= priceHistory[0].price ? '#2ecc71' : '#e74c3c'} />
                                         <View style={styles.statsRow}>
                                             <View style={styles.statItem}>
-                                                <Text style={styles.statLabel}>High</Text>
+                                                <Text style={styles.statLabel}>V-High</Text>
                                                 <Text style={styles.statValue}>₹{Math.max(...priceHistory.map(p => p.price))}</Text>
                                             </View>
                                             <View style={styles.statItem}>
-                                                <Text style={styles.statLabel}>Low</Text>
+                                                <Text style={styles.statLabel}>V-Low</Text>
                                                 <Text style={styles.statValue}>₹{Math.min(...priceHistory.map(p => p.price))}</Text>
                                             </View>
                                             <View style={styles.statItem}>
-                                                <Text style={styles.statLabel}>Average</Text>
+                                                <Text style={styles.statLabel}>Vaarunya Avg</Text>
                                                 <Text style={styles.statValue}>₹{Math.round(priceHistory.reduce((a, b) => a + b.price, 0) / priceHistory.length)}</Text>
                                             </View>
                                         </View>
