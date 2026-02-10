@@ -51,9 +51,9 @@ interface ShipmentItem {
 
 export default function CbmCalculatorScreen() {
     const router = useRouter();
-    const [unit, setUnit] = useState<'Meter' | 'CM' | 'Inches'>('CM');
+    const [unit, setUnit] = useState<'Meter' | 'CM' | 'Inches'>('Meter');
     const [items, setItems] = useState<ShipmentItem[]>([
-        { id: '1', length: '', width: '', height: '', quantity: '1', weightPerPkg: '', unit: 'CM' }
+        { id: '1', length: '', width: '', height: '', quantity: '1', weightPerPkg: '', unit: 'Meter' }
     ]);
     const [lclRate, setLclRate] = useState('60');
     const [fclRate, setFclRate] = useState('1200');
@@ -166,7 +166,10 @@ export default function CbmCalculatorScreen() {
                                 <TouchableOpacity
                                     key={u}
                                     style={[styles.unitTab, unit === u && styles.activeUnitTab]}
-                                    onPress={() => setUnit(u)}
+                                    onPress={() => {
+                                        setUnit(u);
+                                        setItems(items.map(item => ({ ...item, unit: u })));
+                                    }}
                                 >
                                     <Text style={[styles.unitBeforeText, unit === u && styles.activeUnitBeforeText]}>{u}</Text>
                                 </TouchableOpacity>

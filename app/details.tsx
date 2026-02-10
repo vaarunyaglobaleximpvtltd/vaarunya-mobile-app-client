@@ -402,11 +402,11 @@ export default function DetailsScreen() {
                                         <PriceChart data={priceHistory} color={priceHistory[priceHistory.length - 1].price >= priceHistory[0].price ? '#2ecc71' : '#e74c3c'} />
                                         <View style={styles.statsRow}>
                                             <View style={styles.statItem}>
-                                                <Text style={styles.statLabel}>V-High</Text>
+                                                <Text style={styles.statLabel}>Vaarunya High</Text>
                                                 <Text style={styles.statValue}>₹{Math.max(...priceHistory.map(p => p.price))}</Text>
                                             </View>
                                             <View style={styles.statItem}>
-                                                <Text style={styles.statLabel}>V-Low</Text>
+                                                <Text style={styles.statLabel}>Vaarunya Low</Text>
                                                 <Text style={styles.statValue}>₹{Math.min(...priceHistory.map(p => p.price))}</Text>
                                             </View>
                                             <View style={styles.statItem}>
