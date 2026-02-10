@@ -21,6 +21,7 @@ import {
     Layout,
     Globe,
     Info,
+    Package,
 } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
@@ -55,6 +56,13 @@ const FEATURES: Feature[] = [
         title: 'Compliance Check',
         icon: <FileText size={32} color="#fff" />,
         color: '#9b59b6',
+    },
+    {
+        id: 'cbm',
+        title: 'CBM Calculator',
+        icon: <Package size={32} color="#fff" />,
+        route: '/cbm-calculator',
+        color: '#e67e22',
     },
     {
         id: 'trade',
