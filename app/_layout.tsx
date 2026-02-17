@@ -11,6 +11,8 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="index" options={{ title: 'Vaarunya Prices', headerShown: false }} />
         <Stack.Screen name="details" options={{ title: 'Price Details' }} />
+        <Stack.Screen name="blog" options={{ title: 'Knowledge Hub', headerShown: false }} />
+        <Stack.Screen name="blog-detail" options={{ title: 'Article', headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

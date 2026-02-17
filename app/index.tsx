@@ -22,6 +22,7 @@ import {
     Globe,
     Info,
     Package,
+    BookOpen,
 } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
@@ -63,6 +64,13 @@ const FEATURES: Feature[] = [
         icon: <Package size={32} color="#fff" />,
         route: '/cbm-calculator',
         color: '#e67e22',
+    },
+    {
+        id: 'blog',
+        title: 'Knowledge Hub',
+        icon: <BookOpen size={32} color="#fff" />,
+        route: '/blog',
+        color: '#16a085',
     },
     {
         id: 'trade',
